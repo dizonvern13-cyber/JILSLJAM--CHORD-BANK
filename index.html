@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Worship Hub</title>
+
+<meta name="theme-color" content="#bb86fc">
+
+<style>
+:root { --primary:#bb86fc; --bg:#121212; --card:#1e1e1e; --accent:#03dac6; }
+body { font-family:Segoe UI,sans-serif;background:var(--bg);color:#e0e0e0;margin:0;padding-bottom:60px; }
+header { background:var(--card);padding:15px;text-align:center; }
+h2 { color:var(--primary);margin:0; }
+.container { max-width:600px;margin:auto;padding:15px; }
+.card { background:var(--card);border-radius:12px;padding:15px;margin-bottom:12px;border-left:4px solid var(--primary); }
+button { padding:10px;border-radius:8px;border:none;font-weight:bold;cursor:pointer; }
+.primary { background:var(--primary);color:#000;width:100%;margin-top:8px; }
+.add { background:none;border:1px dashed var(--accent);color:var(--accent);width:100%;margin-top:8px; }
+input,textarea { width:100%;padding:10px;margin-top:6px;border-radius:8px;background:#2c2c2c;color:#fff;border:1px solid #333; }
+textarea { min-height:120px;font-family:monospace; }
+.fab { position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;font-size:30px;background:var(--primary); }
+.hidden { display:none; }
+.song { background:#252525;padding:12px;border-radius:10px;margin-top:12px; }
+.song-header { display:flex; justify-content: space-between; align-items:center; }
+.transpose-row { display:flex; gap:5px; margin:6px 0; }
+.transpose-row button { flex:1; padding:6px; background:#333; color:var(--accent); border:1px solid var(--accent); border-radius:5px; font-size:12px; }
+.status { text-align:center; font-size:12px; margin-top:5px; color:#03dac6; }
+</style>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+</head>
+
+<body>
+
+<header>
+<h2>Worship Hub</h2>
+<div class="status" id="status">Online</div>
+</header>
+
+<div class="container">
+<div id="home">
+<h3>Shared Setlists</h3>
+<div id="list">Loading...</div>
+</div>
+
+<div id="edit" class="hidden">
+<button onclick="goHome()">← Back</button><br><br>
+<input type="date" id="date">
+<input type="text" id="leader" placeholder="Worship Leader">
+<div id="songs"></div>
+<button class="add" onclick="addSong()">+ Add Song</button>
+<button class="primary" onclick="save()">☁️ Save</button>
+</div>
+</div>
+
+<button class="fab" onclick="newSet()">+</button>
+
+<script>
+/* FIREBASE CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyAvMs48dleCiKSJZsbiokNGQ1bChu7c7Ms",
+  authDomain: "worship-hub-876b8.firebaseapp.com",
+  projectId: "worship-hub-876b8",
+  storageBucket: "worship-hub-876b8.firebasestorage.app",
+  messagingSenderId: "745120131774",
+  appId: "1:745120131774:web:75075f20be113400500cef"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* ENABLE OFFLINE FIRESTORE */
+db.enablePersistence().catch(()=>{});
+
+/* ONLINE / OFFLINE STATUS */
+const statusDiv = document.getElementById("status");
+window.addEventListener("online", ()=> statusDiv.innerText="Online");
+window.addEventListener("offline", ()=> statusDiv.innerText="Offline Mode");
+
+/* UI */
+const home = document.getElementById('home');
+const edit = document.getElementById('edit');
+const songs = document.getElementById('songs');
+const list = document.getElementById('list');
+const dateInput = document.getElementById('date');
+const leaderInput = document.getElementById('leader');
+let isEditing = null;
+
+function goHome(){ edit.classList.add('hidden'); home.classList.remove('hidden'); load(); }
+function newSet(){ home.classList.add('hidden'); edit.classList.remove('hidden'); songs.innerHTML=''; addSong(); addSong(); addSong(); dateInput.valueAsDate=new Date(); }
+
+/* TRANSPOSE */
+const SHARPS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function transposeChord(chord,semitones){
+ return chord.replace(/[A-G][#b]?/g,m=>{
+  let i=SHARPS.indexOf(m);
+  if(i===-1){const flats={'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'};i=SHARPS.indexOf(flats[m]||m);}
+  if(i===-1)return m;
+  let ni=(i+semitones)%12;if(ni<0)ni+=12;
+  return SHARPS[ni];
+ });
+}
+function runTranspose(btn,amt){
+ const txt=btn.closest('.song').querySelector('textarea');
+ const regex=/\b[A-G][#b]?(?:m|maj|min|dim|aug|sus|add|M|[0-9]|\/)*\b/g;
+ txt.value=txt.value.replace(regex,m=>{
+  if(m.includes('/'))return m.split('/').map(c=>transposeChord(c,amt)).join('/');
+  return transposeChord(m,amt);
+ });
+}
+
+/* ADD SONG */
+function addSong(title='',chords=''){
+ const count=songs.children.length+1;
+ const label=count===1?"OPENING":count===2?"PRAISE":count===3?"WORSHIP":`SONG #${count}`;
+ const div=document.createElement('div');
+ div.className='song';
+ div.innerHTML=`
+  <div class="song-header">
+   <span>${label}</span>
+   <button onclick="this.closest('.song').remove()">Remove</button>
+  </div>
+  <div class="transpose-row">
+   <button onclick="runTranspose(this,-1)">-1</button>
+   <button onclick="runTranspose(this,1)">+1</button>
+  </div>
+  <input placeholder="Song Title" value="${title}">
+  <textarea placeholder="Chords">${chords}</textarea>`;
+ songs.appendChild(div);
+}
+
+/* SAVE */
+async function save(){
+ const data={
+  date:dateInput.value,
+  leader:leaderInput.value,
+  songs:[...songs.children].map(s=>({
+   t:s.querySelector('input').value,
+   c:s.querySelector('textarea').value
+  })),
+  created:Date.now()
+ };
+ if(isEditing){
+  await db.collection("setlists").doc(isEditing).set(data);
+ }else{
+  await db.collection("setlists").add(data);
+ }
+ alert("Saved (auto sync when online)");
+ goHome();
+}
+
+/* LOAD */
+async function load(){
+ list.innerHTML="Loading...";
+ db.collection("setlists").orderBy("created","desc")
+ .onSnapshot(snapshot=>{
+  list.innerHTML="";
+  snapshot.forEach(d=>{
+   const s=d.data();
+   list.innerHTML+=`
+   <div class="card">
+    <b>${s.date}</b> - ${s.leader}
+    ${s.songs.map((x,i)=>`<div><b>${i+1}. ${x.t}</b><pre>${x.c}</pre></div>`).join('')}
+   </div>`;
+  });
+ });
+}
+
+load();
+</script>
+
+</body>
+</html>
